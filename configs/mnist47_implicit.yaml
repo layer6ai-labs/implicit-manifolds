@@ -1,0 +1,92 @@
+output_root: ./runs
+name: mnist47_implicit
+
+dataset:
+  cls: implicit.datasets.images.FilteredMNIST
+  params:
+    classes: [4, 7]
+    root: ./data
+    train: True
+    download: True
+
+ood_dataset:
+  cls: torchvision.datasets.FashionMNIST
+  params:
+    root: ./data
+    train: True
+    download: True
+
+implicit_manifold:
+  cls: implicit.models.ebm.ImplicitManifold
+  params:
+    lims: [0.0, 1.0]
+    buffer_size: 10000
+    energy_norm: l2-squared
+
+  mdf:
+    cls: implicit.maps.smooth.UNetSmoothMap
+    params:
+      dom_shape: [1, 28, 28]
+      out_channels: 3
+      spectral_norm: True
+      size_factor: 0.25
+
+  training:
+    # General parameters
+    optimizer:
+      cls: torch.optim.Adam
+      params:
+        lr: 0.0001
+    batch_size: 128
+    epochs: 200
+
+    # Callbacks for logging
+    callbacks:
+      - cls: callbacks.UpdateProgressBarStats
+        params:
+          freq: 1
+      - cls: callbacks.SaveStatsToTensorBoard
+        params:
+          freq: 1
+      - cls: callbacks.SampleToTensorBoard
+        params:
+          freq: 50
+          sample_kwargs:
+            size: 64
+      - cls: callbacks.SaveModel
+        params:
+          freq_epochs: 5
+      - cls: callbacks.EvaluateFID
+        params:
+          batch_size: 256
+          freq_epochs: 5
+          sample_kwargs:
+            mc_kwargs:
+              n_steps: 0
+      - cls: callbacks.ManifoldOODHistogram
+        params:
+          freq_epochs: 1
+      - cls: callbacks.SampleManifoldTangents
+        params:
+          freq_epochs: 1
+
+    # Loss function definition
+    mu: 1000.
+    sv_min: 0.01
+    sv_max: 0.01
+    beta: 0.1
+    neg_weight: 1.
+    pos_norm: l2
+    neg_norm: l2-squared
+
+    # Gradient clipping
+    clip_norm: null
+    clip_value: null
+
+    # MCMC parameters
+    buffer_frac: 0.95
+    mc_kwargs:
+      n_steps: 20
+      eps: 0.005
+      alpha: 10
+      grad_clamp: 0.01

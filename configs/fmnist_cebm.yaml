@@ -1,0 +1,170 @@
+output_root: ./runs
+name: fmnist_cebm
+
+dataset:
+  cls: torchvision.datasets.FashionMNIST
+  params:
+    root: ./data
+    train: True
+    download: True
+
+ood_dataset:
+  cls: torchvision.datasets.MNIST
+  params:
+    root: ./data
+    train: True
+    download: True
+
+implicit_manifold:
+  cls: implicit.models.ebm.ImplicitManifold
+  params:
+    lims: [0.0, 1.0]
+    buffer_size: 10000
+    energy_norm: l2-squared
+
+  mdf:
+    cls: implicit.maps.smooth.UNetSmoothMap
+    params:
+      dom_shape: [1, 28, 28]
+      out_channels: 3
+      spectral_norm: True
+      size_factor: 0.25
+
+  training:
+    # General parameters
+    optimizer:
+      cls: torch.optim.Adam
+      params:
+        lr: 0.0001
+    batch_size: 128
+    epochs: 100
+
+    # Callbacks for logging
+    callbacks:
+      - cls: callbacks.UpdateProgressBarStats
+        params:
+          freq: 1
+      - cls: callbacks.SaveStatsToTensorBoard
+        params:
+          freq: 1
+      - cls: callbacks.SampleToTensorBoard
+        params:
+          freq: 50
+          sample_kwargs:
+            size: 64
+      - cls: callbacks.SaveModel
+        params:
+          freq_epochs: 5
+      - cls: callbacks.EvaluateFID
+        params:
+          batch_size: 256
+          freq_epochs: 5
+          sample_kwargs:
+            mc_kwargs:
+              n_steps: 0
+      - cls: callbacks.ManifoldOODHistogram
+        params:
+          freq_epochs: 1
+      - cls: callbacks.SampleManifoldTangents
+        params:
+          freq_epochs: 1
+
+    # Loss function definition
+    mu: 100000.
+    sv_min: 0.01
+    sv_max: 0.01
+    beta: 0.1
+    neg_weight: 1.
+    pos_norm: l2
+    neg_norm: l2-squared
+
+    # Gradient clipping
+    clip_norm: null
+    clip_value: null
+
+    # MCMC parameters
+    buffer_frac: 0.95
+    mc_kwargs:
+      n_steps: 20
+      eps: 0.005
+      alpha: 10
+      grad_clamp: 0.01
+
+constrained_ebm:
+  cls: implicit.models.ebm.ConstrainedEBM
+  params:
+    lims: [0.0, 1.0]
+    buffer_size: 10000
+    opt_cls: SGD
+    opt_steps: 0
+    lr: 1
+
+  energy:
+    cls: implicit.maps.smooth.ConvNet2FC
+    params:
+      dom_shape: [1, 28, 28]
+      codom_dim: 1
+      spectral_norm: True
+      nh: 8
+      nh_mlp: 1024
+
+  training:
+    # General parameters
+    optimizer:
+      cls: torch.optim.Adam
+      params:
+        lr: 0.00001
+    batch_size: 64
+    epochs: 100
+
+    # Callbacks for logging
+    callbacks:
+      - cls: callbacks.UpdateProgressBarStats
+        params:
+          freq: 1
+      - cls: callbacks.SaveStatsToTensorBoard
+        params:
+          freq: 1
+      - cls: callbacks.SampleToTensorBoard
+        params:
+          freq: 50
+          sample_kwargs:
+            size: 64
+            mc_kwargs:
+              alpha: 10
+              eps: 0.005
+              n_steps: 5
+              grad_clamp: 0.01
+              opt_cls: SGD
+              opt_steps: 4
+              lr: 1
+      - cls: callbacks.SaveModel
+        params:
+          freq_epochs: 5
+      - cls: callbacks.EnergyOODHistogram
+        params:
+          freq_epochs: 1
+      - cls: callbacks.EvaluateFID
+        params:
+          freq_epochs: 1
+          sample_kwargs:
+            buffer_frac: 1.
+            mc_kwargs:
+              n_steps: 0
+          batch_size: 256
+          num_images: 50000
+
+    beta: 1.
+    buffer_frac: 0.95
+    noise_kwargs:
+      opt_cls: SGD
+      opt_steps: 4
+      lr: 1
+    mc_kwargs:
+      alpha: 10
+      eps: 0.005
+      n_steps: 1
+      grad_clamp: 0.01
+      opt_cls: SGD
+      opt_steps: 60
+      lr: 1

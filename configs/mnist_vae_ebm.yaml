@@ -1,0 +1,122 @@
+output_root: ./runs
+name: mnist_vae_ebm
+
+dataset:
+  cls: torchvision.datasets.MNIST
+  params:
+    root: ./data
+    train: True
+    download: True
+
+ood_dataset:
+  cls: torchvision.datasets.FashionMNIST
+  params:
+    root: ./data
+    train: True
+    download: True
+
+autoencoder:
+  cls: implicit.models.autoencoder.VariationalAutoencoder
+
+  encoder:
+    cls: implicit.maps.smooth.ConvNet2FC
+    params:
+      dom_shape: [1, 28, 28]
+      codom_dim: 32 # Double the size for VAE variance
+      spectral_norm: False
+      nh: 8
+      nh_mlp: 1024
+
+  decoder:
+    cls: implicit.maps.smooth.DeConvNet2
+    params:
+      dom_dim: 16
+      codom_shape: [1, 28, 28]
+      spectral_norm: False
+      nh: 8
+
+  training:
+    # General parameters
+    optimizer:
+      cls: torch.optim.Adam
+      params:
+        lr: 0.0001
+    batch_size: 128
+    epochs: 100
+    beta: 0.00001
+    clip_norm: 10.
+
+    # Callbacks for logging
+    callbacks:
+      - cls: callbacks.UpdateProgressBarStats
+        params:
+          freq: 1
+      - cls: callbacks.SaveStatsToTensorBoard
+        params:
+          freq: 1
+      - cls: callbacks.SaveModel
+        params:
+          freq_epochs: 5
+      - cls: callbacks.SampleReconstructions
+        params:
+          freq_epochs: 1
+
+pushforward_ebm:
+  cls: implicit.models.ebm.PushforwardEBM
+  params:
+    buffer_size: 10000
+    infer_lims: True
+
+  energy:
+    cls: implicit.maps.smooth.FlatSmoothMap
+    params:
+      dom_dim: 16
+      codom_dim: 1
+      num_layers: 4
+      hidden_size: 256
+      spectral_norm: True
+
+  training:
+    # General parameters
+    optimizer:
+      cls: torch.optim.Adam
+      params:
+        lr: 0.0001
+    batch_size: 128
+    epochs: 200
+
+    # Callbacks for logging
+    callbacks:
+      - cls: callbacks.UpdateProgressBarStats
+        params:
+          freq: 1
+      - cls: callbacks.SaveStatsToTensorBoard
+        params:
+          freq: 1
+      - cls: callbacks.SampleToTensorBoard
+        params:
+          freq: 50
+          sample_kwargs:
+            size: 64
+      - cls: callbacks.SaveModel
+        params:
+          freq_epochs: 5
+      - cls: callbacks.EvaluateFID
+        params:
+          batch_size: 256
+          freq_epochs: 5
+          sample_kwargs:
+            mc_kwargs:
+              n_steps: 0
+      - cls: callbacks.EnergyOODHistogram
+        params:
+          freq_epochs: 1
+
+    clip_norm: 10.
+    beta: 0.1
+    buffer_frac: 0.95
+    mc_kwargs:
+      alpha: 10
+      eps: 0.005
+      n_steps: 60
+      grad_clamp: 0.03
